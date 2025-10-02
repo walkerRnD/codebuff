@@ -343,7 +343,7 @@ type InsertMessageParams = {
 export async function insertMessageRecordWithRetries(
   params: InsertMessageParams,
   maxRetries = 3,
-): Promise<typeof schema.message.$inferSelect> {
+): Promise<typeof schema.message.$inferSelect | null> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await insertMessageRecord(params)
@@ -353,7 +353,9 @@ export async function insertMessageRecordWithRetries(
           { messageId: params.messageId, error, attempt },
           `Failed to save message after ${maxRetries} attempts`,
         )
-        throw error
+        return null
+        // TODO: Consider rethrowing the error, if we are losing too much money.
+        // throw error
       } else {
         logger.warn(
           { messageId: params.messageId, error: error },
@@ -488,7 +490,11 @@ async function updateUserCycleUsageWithRetries(
           { userId, orgId, creditsUsed, error, attempt },
           `Failed to update user cycle usage after ${maxRetries} attempts`,
         )
-        throw error
+
+        return { consumed: 0, fromPurchased: 0 }
+
+        // TODO: Consider rethrowing the error, if we are losing too much money.
+        // throw error
       } else {
         logger.warn(
           { userId, orgId, creditsUsed, error: error },
