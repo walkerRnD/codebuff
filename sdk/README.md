@@ -134,7 +134,100 @@ async function main() {
 main()
 ```
 
+### Example 3: Bring Your Own Key (BYOK)
+
+Use your own API keys for Anthropic, Gemini, or OpenAI models to pay directly for LLM costs with reduced or zero Codebuff markup.
+
+```typescript
+import { CodebuffClient } from '@codebuff/sdk'
+
+async function main() {
+  const client = new CodebuffClient({
+    // Option 1: Use only your provider keys (no Codebuff API key required)
+    userApiKeys: {
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      gemini: process.env.GEMINI_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+    },
+    byokMode: 'require', // Only use user keys, fail if missing
+    cwd: process.cwd(),
+  })
+
+  // Option 2: Use Codebuff API key with provider keys as fallback
+  const client2 = new CodebuffClient({
+    apiKey: process.env.CODEBUFF_API_KEY,
+    userApiKeys: {
+      anthropic: process.env.ANTHROPIC_API_KEY,
+    },
+    byokMode: 'prefer', // Use user keys when available, fallback to system keys (default)
+    cwd: process.cwd(),
+  })
+
+  // Option 3: Disable BYOK and always use system keys
+  const client3 = new CodebuffClient({
+    apiKey: process.env.CODEBUFF_API_KEY,
+    byokMode: 'disabled', // Always use system keys
+    cwd: process.cwd(),
+  })
+
+  const run = await client.run({
+    agent: 'codebuff/base@0.0.16',
+    prompt: 'Create a simple calculator class',
+    handleEvent: (event) => {
+      console.log('Codebuff Event', JSON.stringify(event))
+    },
+  })
+}
+
+main()
+```
+
+#### BYOK Modes
+
+- **`'disabled'`**: Always use Codebuff's system keys. Requires a Codebuff API key.
+- **`'prefer'`** (default): Use your provider keys when available, fallback to system keys. Recommended for most users.
+- **`'require'`**: Only use your provider keys. No Codebuff API key required. Fails if provider key is missing for the selected model.
+
+#### BYOK Benefits
+
+- **Lower Costs**: Pay only the provider's API costs with reduced Codebuff markup
+- **Direct Billing**: Charges appear directly on your provider account
+- **No Codebuff API Key Required**: When using `byokMode: 'require'`, you can use Codebuff without a Codebuff API key
+- **Provider Choice**: Use your preferred provider's billing and rate limits
+
+#### Supported Providers
+
+- **Anthropic**: Claude models (e.g., `anthropic/claude-3.5-sonnet`)
+- **Google Gemini**: Gemini models (e.g., `gemini-2.0-flash-exp`)
+- **OpenAI**: GPT models (e.g., `gpt-4o`, `o1`, `o3-mini`)
+
+#### Security
+
+- API keys are encrypted at rest using AES-256-GCM
+- Keys are validated before storage
+- Keys are never logged or exposed in error messages
+
 ## API Reference
+
+### `new CodebuffClient(options)`
+
+Creates a new Codebuff client instance.
+
+#### Constructor Parameters
+
+- **`apiKey`** (string, optional): Your Codebuff API key. Get one at [codebuff.com/api-keys](https://www.codebuff.com/api-keys). Optional if using `byokMode: 'require'` with provider keys.
+
+- **`cwd`** (string, optional): Working directory for the agent. Defaults to `process.cwd()`.
+
+- **`userApiKeys`** (object, optional): Your own API keys for AI providers. Enables BYOK (Bring Your Own Key) mode.
+  - `anthropic` (string, optional): Anthropic API key (starts with `sk-ant-api03-`)
+  - `gemini` (string, optional): Google Gemini API key (starts with `AIzaSy`)
+  - `openai` (string, optional): OpenAI API key (starts with `sk-proj-`)
+
+- **`byokMode`** (string, optional): Controls how user API keys are used. Defaults to `'prefer'`.
+  - `'disabled'`: Always use Codebuff's system keys (requires Codebuff API key)
+  - `'prefer'`: Use user keys when available, fallback to system keys (default)
+  - `'require'`: Only use user keys, fail if missing (no Codebuff API key needed)
 
 ### `client.run(options)`
 

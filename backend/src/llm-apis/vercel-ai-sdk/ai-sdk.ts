@@ -1,5 +1,7 @@
 import { google } from '@ai-sdk/google'
 import { openai } from '@ai-sdk/openai'
+import { createAnthropic } from '@ai-sdk/anthropic'
+import { env } from '@codebuff/internal'
 import {
   finetunedVertexModels,
   geminiModels,
@@ -32,19 +34,56 @@ import type {
 import type { LanguageModel } from 'ai'
 import type { z } from 'zod/v4'
 
+// User API keys for BYOK (Bring Your Own Key)
+export interface UserApiKeys {
+  anthropic?: string
+  gemini?: string
+  openai?: string
+}
+
+export type ByokMode = 'disabled' | 'prefer' | 'require'
+
 export type StreamChunk =
   | {
-      type: 'text'
-      text: string
-    }
+    type: 'text'
+    text: string
+  }
   | {
-      type: 'reasoning'
-      text: string
-    }
+    type: 'reasoning'
+    text: string
+  }
   | { type: 'error'; message: string }
 
-// TODO: We'll want to add all our models here!
-const modelToAiSDKModel = (model: Model): LanguageModel => {
+/**
+ * Helper function to determine if a model is an Anthropic model
+ */
+function isAnthropicModel(model: Model): boolean {
+  return model.startsWith('anthropic/')
+}
+
+/**
+ * Helper function to determine which provider key was used for BYOK
+ */
+function determineByokProvider(
+  model: Model,
+  userApiKeys?: UserApiKeys,
+): 'anthropic' | 'gemini' | 'openai' | null {
+  if (isAnthropicModel(model) && userApiKeys?.anthropic) return 'anthropic'
+  if (Object.values(geminiModels).includes(model as GeminiModel) && userApiKeys?.gemini) return 'gemini'
+  if (Object.values(openaiModels).includes(model as OpenAIModel) && userApiKeys?.openai) return 'openai'
+  return null
+}
+
+/**
+ * Convert a model string to an AI SDK LanguageModel instance.
+ * Supports BYOK (Bring Your Own Key) for Anthropic, Gemini, and OpenAI.
+ */
+const modelToAiSDKModel = (
+  model: Model,
+  userApiKeys?: UserApiKeys,
+  byokMode: ByokMode = 'prefer',
+): LanguageModel => {
+  // Finetuned Vertex models
   if (
     Object.values(finetunedVertexModels as Record<string, string>).includes(
       model,
@@ -52,16 +91,66 @@ const modelToAiSDKModel = (model: Model): LanguageModel => {
   ) {
     return vertexFinetuned(model)
   }
+
+  // Gemini models - direct to Google
   if (Object.values(geminiModels).includes(model as GeminiModel)) {
-    return google.languageModel(model)
+    const apiKey =
+      byokMode === 'disabled'
+        ? env.GEMINI_API_KEY
+        : userApiKeys?.gemini ?? env.GEMINI_API_KEY
+
+    if (byokMode === 'require' && !userApiKeys?.gemini) {
+      throw new Error('Gemini API key required but not provided (byokMode: require)')
+    }
+
+    return google.languageModel(model, { apiKey })
   }
+
+  // OpenAI models - direct to OpenAI
   if (model === openaiModels.o3pro || model === openaiModels.o3) {
-    return openai.responses(model)
+    const apiKey =
+      byokMode === 'disabled'
+        ? env.OPENAI_API_KEY
+        : userApiKeys?.openai ?? env.OPENAI_API_KEY
+
+    if (byokMode === 'require' && !userApiKeys?.openai) {
+      throw new Error('OpenAI API key required but not provided (byokMode: require)')
+    }
+
+    return openai.responses(model, { apiKey })
   }
+
   if (Object.values(openaiModels).includes(model as OpenAIModel)) {
-    return openai.languageModel(model)
+    const apiKey =
+      byokMode === 'disabled'
+        ? env.OPENAI_API_KEY
+        : userApiKeys?.openai ?? env.OPENAI_API_KEY
+
+    if (byokMode === 'require' && !userApiKeys?.openai) {
+      throw new Error('OpenAI API key required but not provided (byokMode: require)')
+    }
+
+    return openai.languageModel(model, { apiKey })
   }
-  // All other models go through OpenRouter
+
+  // Anthropic models - direct to Anthropic (if user key provided) or OpenRouter
+  if (isAnthropicModel(model)) {
+    // If user has Anthropic key and byokMode allows it, use direct Anthropic API
+    if (byokMode !== 'disabled' && userApiKeys?.anthropic) {
+      const anthropic = createAnthropic({ apiKey: userApiKeys.anthropic })
+      return anthropic.languageModel(model)
+    }
+
+    // If byokMode is 'require', fail if no user key
+    if (byokMode === 'require') {
+      throw new Error('Anthropic API key required but not provided (byokMode: require)')
+    }
+
+    // Otherwise, use OpenRouter with system key
+    return openRouterLanguageModel(model)
+  }
+
+  // All other models go through OpenRouter with system key
   return openRouterLanguageModel(model)
 }
 
@@ -82,6 +171,8 @@ export const promptAiSdkStream = async function* (
     maxRetries?: number
     onCostCalculated?: (credits: number) => Promise<void>
     includeCacheControl?: boolean
+    userApiKeys?: UserApiKeys
+    byokMode?: ByokMode
   } & Omit<Parameters<typeof streamText>[0], 'model' | 'messages'>,
 ): AsyncGenerator<StreamChunk, string | null> {
   if (
@@ -103,7 +194,8 @@ export const promptAiSdkStream = async function* (
   }
   const startTime = Date.now()
 
-  let aiSDKModel = modelToAiSDKModel(options.model)
+  const byokMode = options.byokMode ?? 'prefer'
+  let aiSDKModel = modelToAiSDKModel(options.model, options.userApiKeys, byokMode)
 
   const response = streamText({
     ...options,
@@ -156,8 +248,8 @@ export const promptAiSdkStream = async function* (
       if (
         (
           options.providerOptions?.openrouter as
-            | OpenRouterProviderOptions
-            | undefined
+          | OpenRouterProviderOptions
+          | undefined
         )?.reasoning?.exclude
       ) {
         continue
@@ -230,6 +322,7 @@ export const promptAiSdkStream = async function* (
   }
 
   const messageId = (await response.response).id
+  const byokProvider = determineByokProvider(options.model, options.userApiKeys)
   const creditsUsedPromise = saveMessage({
     messageId,
     userId: options.userId,
@@ -246,6 +339,7 @@ export const promptAiSdkStream = async function* (
     finishedAt: new Date(),
     latencyMs: Date.now() - startTime,
     chargeUser: options.chargeUser ?? true,
+    byokProvider,
     costOverrideDollars,
     agentId: options.agentId,
   })
@@ -273,6 +367,8 @@ export const promptAiSdk = async function (
     onCostCalculated?: (credits: number) => Promise<void>
     includeCacheControl?: boolean
     maxRetries?: number
+    userApiKeys?: UserApiKeys
+    byokMode?: ByokMode
   } & Omit<Parameters<typeof generateText>[0], 'model' | 'messages'>,
 ): Promise<string> {
   if (
@@ -294,7 +390,8 @@ export const promptAiSdk = async function (
   }
 
   const startTime = Date.now()
-  let aiSDKModel = modelToAiSDKModel(options.model)
+  const byokMode = options.byokMode ?? 'prefer'
+  let aiSDKModel = modelToAiSDKModel(options.model, options.userApiKeys, byokMode)
 
   const response = await generateText({
     ...options,
@@ -305,6 +402,7 @@ export const promptAiSdk = async function (
   const inputTokens = response.usage.inputTokens || 0
   const outputTokens = response.usage.inputTokens || 0
 
+  const byokProvider = determineByokProvider(options.model, options.userApiKeys)
   const creditsUsedPromise = saveMessage({
     messageId: generateCompactId(),
     userId: options.userId,
@@ -320,6 +418,7 @@ export const promptAiSdk = async function (
     latencyMs: Date.now() - startTime,
     chargeUser: options.chargeUser ?? true,
     agentId: options.agentId,
+    byokProvider,
   })
 
   // Call the cost callback if provided
@@ -348,6 +447,8 @@ export const promptAiSdkStructured = async function <T>(options: {
   onCostCalculated?: (credits: number) => Promise<void>
   includeCacheControl?: boolean
   maxRetries?: number
+  userApiKeys?: UserApiKeys
+  byokMode?: ByokMode
 }): Promise<T> {
   if (
     !checkLiveUserInput(
@@ -367,7 +468,8 @@ export const promptAiSdkStructured = async function <T>(options: {
     return {} as T
   }
   const startTime = Date.now()
-  let aiSDKModel = modelToAiSDKModel(options.model)
+  const byokMode = options.byokMode ?? 'prefer'
+  let aiSDKModel = modelToAiSDKModel(options.model, options.userApiKeys, byokMode)
 
   const responsePromise = generateObject<z.ZodType<T>, 'object'>({
     ...options,
@@ -383,6 +485,7 @@ export const promptAiSdkStructured = async function <T>(options: {
   const inputTokens = response.usage.inputTokens || 0
   const outputTokens = response.usage.inputTokens || 0
 
+  const byokProvider = determineByokProvider(options.model, options.userApiKeys)
   const creditsUsedPromise = saveMessage({
     messageId: generateCompactId(),
     userId: options.userId,
@@ -398,6 +501,7 @@ export const promptAiSdkStructured = async function <T>(options: {
     latencyMs: Date.now() - startTime,
     chargeUser: options.chargeUser ?? true,
     agentId: options.agentId,
+    byokProvider,
   })
 
   // Call the cost callback if provided

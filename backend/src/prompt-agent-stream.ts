@@ -15,6 +15,8 @@ export const getAgentStreamFromTemplate = (params: {
   onCostCalculated?: (credits: number) => Promise<void>
   agentId?: string
   includeCacheControl?: boolean
+  userApiKeys?: import('./llm-apis/vercel-ai-sdk/ai-sdk').UserApiKeys
+  byokMode?: import('./llm-apis/vercel-ai-sdk/ai-sdk').ByokMode
 
   template: AgentTemplate
 }) => {
@@ -26,6 +28,8 @@ export const getAgentStreamFromTemplate = (params: {
     onCostCalculated,
     agentId,
     includeCacheControl,
+    userApiKeys,
+    byokMode,
     template,
   } = params
 
@@ -49,6 +53,8 @@ export const getAgentStreamFromTemplate = (params: {
       includeCacheControl,
       agentId,
       maxRetries: 3,
+      userApiKeys,
+      byokMode,
     }
 
     // Add Gemini-specific options if needed
@@ -70,7 +76,7 @@ export const getAgentStreamFromTemplate = (params: {
     if (!options.providerOptions.openrouter) {
       options.providerOptions.openrouter = {}
     }
-    ;(
+    ; (
       options.providerOptions.openrouter as OpenRouterProviderOptions
     ).reasoning = template.reasoningOptions
 

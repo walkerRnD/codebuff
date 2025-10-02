@@ -11,6 +11,7 @@ import { SecuritySection } from './components/security-section'
 import { ReferralsSection } from './components/referrals-section'
 import { UsageSection } from './components/usage-section'
 import { ApiKeysSection } from './components/api-keys-section'
+import { UserApiKeysSection } from './components/user-api-keys-section'
 import { ProfileLoggedOut } from './components/logged-out'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -34,6 +35,12 @@ const sections = [
     title: 'API Keys',
     icon: Key,
     component: ApiKeysSection,
+  },
+  {
+    id: 'user-api-keys',
+    title: 'Provider API Keys',
+    icon: Key,
+    component: UserApiKeysSection,
   },
   {
     id: 'referrals',

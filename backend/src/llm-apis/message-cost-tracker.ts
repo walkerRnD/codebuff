@@ -573,7 +573,8 @@ export const saveMessage = async (value: {
   cacheReadInputTokens?: number
   finishedAt: Date
   latencyMs: number
-  usesUserApiKey?: boolean
+  usesUserApiKey?: boolean // Deprecated: use byokProvider instead
+  byokProvider?: 'anthropic' | 'gemini' | 'openai' | null
   chargeUser?: boolean
   costOverrideDollars?: number
   agentId?: string
@@ -598,16 +599,21 @@ export const saveMessage = async (value: {
       // Default to 1 cent per credit
       const centsPerCredit = 1
 
+      // Determine if user API key was used (support both old and new parameters)
+      const usesUserKey = value.byokProvider !== null && value.byokProvider !== undefined
+        ? !!value.byokProvider
+        : value.usesUserApiKey ?? false
+
       const costInCents =
         value.chargeUser ?? true // default to true
           ? Math.max(
-              0,
-              Math.round(
-                cost *
-                  100 *
-                  (value.usesUserApiKey ? PROFIT_MARGIN : 1 + PROFIT_MARGIN),
-              ),
-            )
+            0,
+            Math.round(
+              cost *
+              100 *
+              (usesUserKey ? PROFIT_MARGIN : 1 + PROFIT_MARGIN),
+            ),
+          )
           : 0
 
       const creditsUsed = Math.max(0, costInCents)

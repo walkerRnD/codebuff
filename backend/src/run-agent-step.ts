@@ -250,6 +250,8 @@ export const runAgentStep = async (
     userId,
     agentId: agentState.agentId,
     template: agentTemplate,
+    userApiKeys,
+    byokMode,
     onCostCalculated: async (credits: number) => {
       try {
         agentState.creditsUsed += credits
@@ -455,6 +457,8 @@ export const loopAgentSteps = async (
     clientSessionId,
     onResponseChunk,
     clearUserPromptMessagesAfterResponse = true,
+    userApiKeys,
+    byokMode,
   }: {
     userInputId: string
     agentType: AgentTemplateType
@@ -470,6 +474,8 @@ export const loopAgentSteps = async (
     userId: string | undefined
     clientSessionId: string
     onResponseChunk: (chunk: string | PrintModeEvent) => void
+    userApiKeys?: import('./llm-apis/vercel-ai-sdk/ai-sdk').UserApiKeys
+    byokMode?: import('./llm-apis/vercel-ai-sdk/ai-sdk').ByokMode
   },
 ): Promise<{
   agentState: AgentState
@@ -497,27 +503,27 @@ export const loopAgentSteps = async (
   // Get the instructions prompt if we have a prompt/params
   const instructionsPrompt = hasPrompt
     ? await getAgentPrompt({
-        agentTemplate,
-        promptType: { type: 'instructionsPrompt' },
-        fileContext,
-        agentState,
-        agentTemplates: localAgentTemplates,
-        additionalToolDefinitions: () => {
-          const additionalToolDefinitions = cloneDeep(
-            Object.fromEntries(
-              Object.entries(fileContext.customToolDefinitions).filter(
-                ([toolName]) => agentTemplate.toolNames.includes(toolName),
-              ),
+      agentTemplate,
+      promptType: { type: 'instructionsPrompt' },
+      fileContext,
+      agentState,
+      agentTemplates: localAgentTemplates,
+      additionalToolDefinitions: () => {
+        const additionalToolDefinitions = cloneDeep(
+          Object.fromEntries(
+            Object.entries(fileContext.customToolDefinitions).filter(
+              ([toolName]) => agentTemplate.toolNames.includes(toolName),
             ),
-          )
-          return getMCPToolData({
-            ws,
-            toolNames: agentTemplate.toolNames,
-            mcpServers: agentTemplate.mcpServers,
-            writeTo: additionalToolDefinitions,
-          })
-        },
-      })
+          ),
+        )
+        return getMCPToolData({
+          ws,
+          toolNames: agentTemplate.toolNames,
+          mcpServers: agentTemplate.mcpServers,
+          writeTo: additionalToolDefinitions,
+        })
+      },
+    })
     : undefined
 
   // Build the initial message history with user prompt and instructions
@@ -532,14 +538,14 @@ export const loopAgentSteps = async (
         keepDuringTruncation: true,
       },
       prompt &&
-        prompt in additionalSystemPrompts && {
-          role: 'user' as const,
-          content: asSystemInstruction(
-            additionalSystemPrompts[
-              prompt as keyof typeof additionalSystemPrompts
-            ],
-          ),
-        },
+      prompt in additionalSystemPrompts && {
+        role: 'user' as const,
+        content: asSystemInstruction(
+          additionalSystemPrompts[
+          prompt as keyof typeof additionalSystemPrompts
+          ],
+        ),
+      },
     ],
 
     instructionsPrompt && {

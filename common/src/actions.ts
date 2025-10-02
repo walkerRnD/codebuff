@@ -41,6 +41,15 @@ export const CLIENT_ACTION_SCHEMA = z.discriminatedUnion('type', [
     model: z.string().optional(),
     repoUrl: z.string().optional(),
     agentId: z.string().optional(),
+    // BYOK (Bring Your Own Key) support
+    userApiKeys: z
+      .object({
+        anthropic: z.string().optional(),
+        gemini: z.string().optional(),
+        openai: z.string().optional(),
+      })
+      .optional(),
+    byokMode: z.enum(['disabled', 'prefer', 'require']).optional(),
   }),
   z.object({
     type: z.literal('read-files-response'),

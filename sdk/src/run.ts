@@ -36,6 +36,7 @@ import type { SessionState } from '../../common/src/types/session-state'
 
 export type CodebuffClientOptions = {
   // Provide an API key or set the CODEBUFF_API_KEY environment variable.
+  // Optional if userApiKeys are provided.
   apiKey?: string
 
   cwd?: string
@@ -60,6 +61,20 @@ export type CodebuffClientOptions = {
     }
   >
   customToolDefinitions?: CustomToolDefinition[]
+
+  // BYOK (Bring Your Own Key) options
+  // User-provided API keys for direct provider access
+  userApiKeys?: {
+    anthropic?: string
+    gemini?: string
+    openai?: string
+  }
+
+  // BYOK mode controls fallback behavior
+  // - 'disabled': Always use system keys (requires Codebuff apiKey)
+  // - 'prefer': Use user keys when available, fallback to system keys (default)
+  // - 'require': Only use user keys, fail if missing (no Codebuff apiKey needed)
+  byokMode?: 'disabled' | 'prefer' | 'require'
 }
 
 export type RunOptions = {
@@ -103,7 +118,7 @@ export async function run({
     }
   }
 
-  let resolve: (value: RunReturnType) => any = () => {}
+  let resolve: (value: RunReturnType) => any = () => { }
   const promise = new Promise<RunReturnType>((res) => {
     resolve = res
   })
@@ -114,8 +129,8 @@ export async function run({
     onWebsocketError: (error) => {
       onError({ message: error.message })
     },
-    onWebsocketReconnect: () => {},
-    onRequestReconnect: async () => {},
+    onWebsocketReconnect: () => { },
+    onRequestReconnect: async () => { },
     onResponseError: async (error) => {
       onError({ message: error.message })
     },
@@ -131,12 +146,12 @@ export async function run({
         overrides: overrideTools ?? {},
         customToolDefinitions: customToolDefinitions
           ? Object.fromEntries(
-              customToolDefinitions.map((def) => [def.toolName, def]),
-            )
+            customToolDefinitions.map((def) => [def.toolName, def]),
+          )
           : {},
         cwd,
       }),
-    onCostResponse: async () => {},
+    onCostResponse: async () => { },
 
     onResponseChunk: async (action) => {
       const { userInputId, chunk } = action
@@ -146,7 +161,7 @@ export async function run({
         await handleEvent?.(chunk)
       }
     },
-    onSubagentResponseChunk: async () => {},
+    onSubagentResponseChunk: async () => { },
 
     onPromptResponse: (action) =>
       handlePromptResponse({
@@ -211,6 +226,8 @@ export async function run({
     sessionState,
     toolResults: extraToolResults ?? [],
     agentId,
+    userApiKeys,
+    byokMode,
   })
 
   const result = await promise
@@ -322,9 +339,9 @@ async function handleToolCall({
           value: {
             errorMessage:
               error &&
-              typeof error === 'object' &&
-              'message' in error &&
-              typeof error.message === 'string'
+                typeof error === 'object' &&
+                'message' in error &&
+                typeof error.message === 'string'
                 ? error.message
                 : typeof error === 'string'
                   ? error

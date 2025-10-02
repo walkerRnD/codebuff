@@ -199,6 +199,29 @@ export async function retrieveAndDecryptApiKey(
 }
 
 /**
+ * Validates an API key format based on its type.
+ * @param keyType The type of the API key (e.g., 'anthropic', 'gemini', 'openai').
+ * @param apiKey The API key to validate.
+ * @returns True if the key format is valid, false otherwise.
+ */
+export function validateApiKey(keyType: ApiKeyType, apiKey: string): boolean {
+  const prefix = KEY_PREFIXES[keyType]
+  const length = KEY_LENGTHS[keyType]
+
+  // Check prefix
+  if (prefix && !apiKey.startsWith(prefix)) {
+    return false
+  }
+
+  // Check length
+  if (length && apiKey.length !== length) {
+    return false
+  }
+
+  return true
+}
+
+/**
  * Deletes a specific API key entry for a given user and key type.
  * @param userId The ID of the user.
  * @param keyType The type of the API key to delete (e.g., 'gemini').

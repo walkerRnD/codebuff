@@ -7,15 +7,35 @@ import type { RunState } from './run-state'
 
 export class CodebuffClient {
   public options: CodebuffClientOptions & {
-    apiKey: string
+    apiKey?: string
     fingerprintId: string
   }
 
   constructor(options: CodebuffClientOptions) {
     const foundApiKey = options.apiKey ?? process.env[API_KEY_ENV_VAR]
-    if (!foundApiKey) {
+    const hasUserApiKeys =
+      options.userApiKeys &&
+      Object.values(options.userApiKeys).some((key) => key)
+    const byokMode = options.byokMode ?? 'prefer'
+
+    // Authentication validation
+    if (byokMode === 'disabled' && !foundApiKey) {
       throw new Error(
-        `Codebuff API key not found. Please provide an apiKey in the constructor of CodebuffClient or set the ${API_KEY_ENV_VAR} environment variable.`,
+        `Codebuff API key required when byokMode is 'disabled'. Please provide an apiKey in the constructor of CodebuffClient or set the ${API_KEY_ENV_VAR} environment variable.`,
+      )
+    }
+
+    if (byokMode === 'require' && !hasUserApiKeys) {
+      throw new Error(
+        `User API keys required when byokMode is 'require'. Please provide at least one provider API key in userApiKeys.`,
+      )
+    }
+
+    if (!foundApiKey && !hasUserApiKeys) {
+      throw new Error(
+        `Authentication required: provide either a Codebuff API key or user provider API keys.\n\n` +
+        `Option 1: Provide apiKey in constructor or set ${API_KEY_ENV_VAR} environment variable.\n` +
+        `Option 2: Provide userApiKeys with at least one provider key (anthropic, gemini, or openai).`,
       )
     }
 
@@ -29,6 +49,7 @@ export class CodebuffClient {
         }
       },
       fingerprintId: `codebuff-sdk-${Math.random().toString(36).substring(2, 15)}`,
+      byokMode,
       ...options,
     }
   }
